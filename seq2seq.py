@@ -81,11 +81,44 @@ max_len_outputs = max(len(s) for s in target_sequences)
 min_len_inputs = min(len(s) for s in input_sequences)
 min_len_outputs = min(len(s) for s in target_sequences)
 
+## all the length dimension are defined here, actually##
 encoder_inputs = pad_sequences(input_sequences, maxlen = max_len_inputs)
-decoder_inputs = pad_sequences(target_inputs_sequences, maxlen = max_len_outputs)
-decoder_outputs = pad_sequences(target_sequences,maxlen = max_len_outputs)
-
+decoder_inputs = pad_sequences(target_inputs_sequences, maxlen = max_len_outputs, padding = 'post')
+decoder_outputs = pad_sequences(target_sequences,maxlen = max_len_outputs, padding = 'post')
 
 print('Encoder sequence shape: {}'.format(encoder_inputs.shape))
 print('Decoder inputs shape: {}'.format(decoder_inputs.shape))
 print("Decoder outputs.shape: {}".format(decoder_outputs.shape))
+
+print('Loading word vectors')
+word2vec = {}
+with open(EMBEDDING_PATH,'r', encoding = 'utf-8') as f:
+    for line in f:
+        values = line.split()
+        word = values[0]
+        vector = np.asarray(values[1:],dtype = 'float32')
+        word2vec[word] = vector
+print('Word Vectors loaded.')
+
+print('Building embedding matrix and embedding layer')
+num_words = min(MAX_NUM_WORDS, len(word2index_inputs) + 1)
+embedding_matrix = np.zeros((num_words, EMBEDDING_DIM))
+for word, ind in word2index.items():
+    if ind < MAX_VOCAB_SIZE:
+        embedding_vector = word2vec.get(word)
+        if embedding_vector is not None:
+            embedding_matrix[ind] = embedding_vector
+
+embedding_layer = Embedding(
+    num_words,
+    EMBEDDING_DIM,
+    weights = [embedding_matrix],
+    input_length = max_len_input
+)
+
+decoder_targets_one_hot = np.zeros((
+len(decoder_inputs), max_len_outputs, num_words_outputs
+), dtype = 'float32')
+
+for i, seq in enumerate(decoder_outputs):
+    for time, token in seq
