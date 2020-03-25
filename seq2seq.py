@@ -18,8 +18,14 @@ MAX_SEQUENCE_LENGTH = 100
 MAX_NUM_WORDS = 20000
 EMBEDDING_DIM = 100
 
-DATA_PATH = r"C:\Users\songshushan\desktop\rnn_play_around\data\spa.txt"
-EMBEDDING_PATH = r"C:\Users\songshushan\desktop\rnn_play_around\glove.6B\glove.6B.{}d.txt".format(str(EMBEDDING_DIM))
+
+# Window path
+# DATA_PATH = r"C:\Users\songshushan\desktop\rnn_play_around\data\spa.txt"
+# EMBEDDING_PATH = r"C:\Users\songshushan\desktop\rnn_play_around\glove.6B\glove.6B.{}d.txt".format(str(EMBEDDING_DIM))
+
+# Mac path
+DATA_PATH = "/Users/huan/desktop/rnn/data/spa.txt"
+EMBEDDING_PATH = "/Users/huan/desktop/rnn/glove.6B/glove.6B.{}d.txt".format(str(EMBEDDING_DIM))
 
 input_texts = []
 target_texts = []
@@ -103,8 +109,8 @@ print('Word Vectors loaded.')
 print('Building embedding matrix and embedding layer')
 num_words = min(MAX_NUM_WORDS, len(word2index_inputs) + 1)
 embedding_matrix = np.zeros((num_words, EMBEDDING_DIM))
-for word, ind in word2index.items():
-    if ind < MAX_VOCAB_SIZE:
+for word, ind in word2index_inputs.items():
+    if ind < MAX_NUM_WORDS:
         embedding_vector = word2vec.get(word)
         if embedding_vector is not None:
             embedding_matrix[ind] = embedding_vector
@@ -113,12 +119,137 @@ embedding_layer = Embedding(
     num_words,
     EMBEDDING_DIM,
     weights = [embedding_matrix],
-    input_length = max_len_input
+    input_length = max_len_inputs
 )
 
+# target are encoded one-hot
 decoder_targets_one_hot = np.zeros((
 len(decoder_inputs), max_len_outputs, num_words_outputs
 ), dtype = 'float32')
 
 for i, seq in enumerate(decoder_outputs):
-    for time, token in seq
+    for time, token in enumerate(seq):
+        decoder_targets_one_hot[i, time, token] = 1
+
+
+# ------------* Seq 2 Seq model *----------------
+# encoder part
+encoder_input_t = Input(shape = (max_len_inputs,))
+x = embedding_layer(encoder_input_t)
+encoder_layer = LSTM(LATENT_DIM, return_state = True, dropout = 0.5)
+encoder_outputs, h, c = encoder_layer(x)
+encoder_states = [h, c]
+
+# decoder part
+decoder_input_t = Input(shape = (max_len_outputs,))
+decoder_embedding = Embedding(num_words_outputs, EMBEDDING_DIM)
+decoder_inputs_x = decoder_embedding(decoder_input_t)
+decoder_lstm = LSTM(LATENT_DIM,return_sequences = True, return_state = True)
+decoder_outputs_t, _, _ = decoder_lstm(decoder_inputs_x, initial_state = encoder_states)
+decoder_dense = Dense(num_words_outputs, activation = 'softmax')
+decoder_outputs_t = decoder_dense(decoder_outputs_t)
+
+
+model = Model(inputs = [encoder_input_t, decoder_input_t], outputs = [decoder_outputs_t])
+
+model.compile(optimizer = 'rmsprop', loss = 'categorical_crossentropy', metrics = ['accuracy'])
+
+history = model.fit(x = [encoder_inputs, decoder_inputs],
+                    y = decoder_targets_one_hot,
+                    epochs = EPOCHS,
+                    batch_size = BATCH_SIZE,
+                    validation_split = .2)
+
+plt.plot(history.history['loss'], label = 'Loss')
+plt.plot(history.history['val_loss'], label = 'Val-loss')
+plt.legend()
+plt.show()
+
+plt.plot(history.history['accuracy'], label = 'Accuracy')
+plt.plot(history.history['val_accuracy'], label = 'Val-Accuracy')
+plt.legend()
+plt.show()
+
+model.save('seq2seq.h5')
+
+
+
+# At prediction time, build a sampling model
+encoder_model = Model(encoder_input_t, encoder_states)
+
+
+decoder_state_h  = Input(shape = (LATENT_DIM,))
+decoder_state_c =  Input(shape = (LATENT_DIM,))
+decoder_state_input = [decoder_state_h, decoder_state_c]
+
+decoder_input_sos = Input(shape = (1,))
+decoder_input_x = decoder_embedding(decoder_input_sos)
+decoder_output_x, h, c = decoder_lstm(decoder_input_x, initial_state = decoder_state_input)
+decoder_states = [h,c]
+decoder_outputs_p = decoder_dense(decoder_output_x)
+
+decoder_model = Model([decoder_input_sos] + decoder_state_input, [decoder_outputs_p] + decoder_states)
+
+# index2word_inputs - english
+# index2word_outputs - spanish
+
+def decode_sequence(input_seq):
+    '''
+        input_seq: token sequences,
+        only 1 token sequence,
+        but require a batch dimension,
+        Type: 2 dimensional list or numpy array
+    '''
+    # encode the input sentence
+    states_value = encoder_model.predict(input_seq)
+
+    # 1 sample, 1 time step
+    target_seq = np.zeros((1,1))
+
+    # the first input should be sos
+    target_seq[0,0] = word2index_outputs.get('<sos>')
+
+    # if hit eos, end sampling
+    eos = word2index_outputs['<eos>']
+
+    # token stored in a list
+    output_sentence = []
+
+    for _ in range(max_len_outputs):
+        # one step (on time dimension) decoder
+        output_tokens,h,c = decoder_model.predict([target_seq] + states_value)
+
+        # retrieve results from softmax
+        idx = np.argmax(output_tokens[0,0,:])
+
+        # hit end criteria
+        if eos == idx:
+            break
+
+        # look up dictionary to get a word
+        word = ''
+        if idx > 0:
+            word = index2word_outputs[idx]
+            output_sentence.append(word)
+
+        # input and state becomes the current timestep
+        target_seq[0,0] = idx
+        states_value = [h,c]
+
+    return " ".joint(output_sentence)
+
+
+
+while True:
+     i = np.random.choice(len(encoder_inputs))
+     # outter list add a batch dimension
+     input_seq = [encoder_inputs[i]]
+
+     translation = decode_sequence(input_seq)
+
+     print("Model run-------:")
+     print('Input: {}'.format(input_texts[i]))
+     print('Translation: {}'.format(translation))
+     ans = Input('Continue? [Y/n]')
+     if ans and ans.startswith('n'):
+         break
