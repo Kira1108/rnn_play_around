@@ -11,7 +11,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 BATCH_SIZE = 64
-EPOCHS = 100
+EPOCHS = 1000
 LATENT_DIM = 256
 NUM_SAMPLES = 10000
 MAX_SEQUENCE_LENGTH = 100
@@ -19,13 +19,13 @@ MAX_NUM_WORDS = 20000
 EMBEDDING_DIM = 100
 
 
-# Window path
-# DATA_PATH = r"C:\Users\songshushan\desktop\rnn_play_around\data\spa.txt"
-# EMBEDDING_PATH = r"C:\Users\songshushan\desktop\rnn_play_around\glove.6B\glove.6B.{}d.txt".format(str(EMBEDDING_DIM))
+# Windows path
+DATA_PATH = r"C:\Users\songshushan\desktop\rnn_play_around\data\spa.txt"
+EMBEDDING_PATH = r"C:\Users\songshushan\desktop\rnn_play_around\glove.6B\glove.6B.{}d.txt".format(str(EMBEDDING_DIM))
 
 # Mac path
-DATA_PATH = "/Users/huan/desktop/rnn/data/spa.txt"
-EMBEDDING_PATH = "/Users/huan/desktop/rnn/glove.6B/glove.6B.{}d.txt".format(str(EMBEDDING_DIM))
+# DATA_PATH = "/Users/huan/desktop/rnn/data/spa.txt"
+# EMBEDDING_PATH = "/Users/huan/desktop/rnn/glove.6B/glove.6B.{}d.txt".format(str(EMBEDDING_DIM))
 
 input_texts = []
 target_texts = []
@@ -77,7 +77,7 @@ tokenizer_outputs.fit_on_texts(target_texts +  target_texts_inputs)
 target_sequences = tokenizer_outputs.texts_to_sequences(target_texts)
 target_inputs_sequences = tokenizer_outputs.texts_to_sequences(target_texts_inputs)
 word2index_outputs = tokenizer_outputs.word_index
-index2word_outputs = {k:v for k,v in word2index_outputs.items()}
+index2word_outputs = {v:k for k,v in word2index_outputs.items()}
 print("Found {} unique output tokens.".format(len(word2index_outputs)))
 
 num_words_inputs = len(word2index_inputs) + 1
@@ -152,6 +152,9 @@ decoder_outputs_t = decoder_dense(decoder_outputs_t)
 
 model = Model(inputs = [encoder_input_t, decoder_input_t], outputs = [decoder_outputs_t])
 
+print("Training model summary")
+print(model.summary())
+
 model.compile(optimizer = 'rmsprop', loss = 'categorical_crossentropy', metrics = ['accuracy'])
 
 history = model.fit(x = [encoder_inputs, decoder_inputs],
@@ -177,6 +180,9 @@ model.save('seq2seq.h5')
 # At prediction time, build a sampling model
 encoder_model = Model(encoder_input_t, encoder_states)
 
+print("Test model encoder summary:")
+print(encoder_model.summary())
+
 
 decoder_state_h  = Input(shape = (LATENT_DIM,))
 decoder_state_c =  Input(shape = (LATENT_DIM,))
@@ -189,6 +195,9 @@ decoder_states = [h,c]
 decoder_outputs_p = decoder_dense(decoder_output_x)
 
 decoder_model = Model([decoder_input_sos] + decoder_state_input, [decoder_outputs_p] + decoder_states)
+
+print("Test model decoder summary")
+print(decoder_model.summary())
 
 # index2word_inputs - english
 # index2word_outputs - spanish
@@ -236,20 +245,20 @@ def decode_sequence(input_seq):
         target_seq[0,0] = idx
         states_value = [h,c]
 
-    return " ".joint(output_sentence)
-
-
+    return " ".join(output_sentence)
 
 while True:
      i = np.random.choice(len(encoder_inputs))
      # outter list add a batch dimension
-     input_seq = [encoder_inputs[i]]
+     input_seq = encoder_inputs[i:i+1]
+     print('Input sequence example')
+     print(input_seq)
 
      translation = decode_sequence(input_seq)
 
      print("Model run-------:")
      print('Input: {}'.format(input_texts[i]))
      print('Translation: {}'.format(translation))
-     ans = Input('Continue? [Y/n]')
-     if ans and ans.startswith('n'):
+     ans = input('Continue? [Y/n]')
+     if ans and ans.lower().startswith('n'):
          break
