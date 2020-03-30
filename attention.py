@@ -221,10 +221,30 @@ attn_dense2 = Dense(1, activation = softmax_over_time)
 attn_dot = Dot(axis = 1)
 
 def one_step_attention(h, st_1):
+
+    # since you return the sequences, h are hidden vectors for all timestep
+    # h has a shape of (Tx, LATENT_DIM_ENCODER)
+
+    # st_1 here is one step decoder hidden state (1, LATENT_DIM_DECODER)
+    # repeat vector add a dimension before original dimension
+    # after repeat st_1 has shape (Tx, LATENT_DIM_DECODER)
     st_1 = attn_repeat_layer(st_1)
+
+    # Concat happends on the last dimension
+    # a has a shape of (Tx, LATENT_DIM_ENCODER + LATENT_DIM_DECODER)
     a = attn_concat_layer([h,st_1])
+
+    # Dense acts only on the last dimension
+    # after this dense , you have a shape (Tx, 10)
     a = attn_dense1(a)
+
+    # The final dense has only 1 unit - for each timestep
+    # Activation over time, you have (Tx, 1) for alphas
     alphas = attn_dense2(a)
+
+    # remember alphas has a shape (Tx ,1)
+    # h shape (Tx, LATENT_DIM_ENCODER)
+    
     context = attn_dot([alphas, h])
     return context
 
