@@ -244,9 +244,29 @@ def one_step_attention(h, st_1):
 
     # remember alphas has a shape (Tx ,1)
     # h shape (Tx, LATENT_DIM_ENCODER)
-    
+
     context = attn_dot([alphas, h])
     return context
+
+decoder_lstm = LSTM(LATENT_DIM_DECODER, return_state = True)
+# softmax at last dimension
+decoder_dense = Dense(num_words_outputs, activation = 'softmax')
+
+initial_s = Input(shape = (LATENT_DIM_DECODER,), name = 's0')
+initial_c = Input(shape = (LATENT_DIM_DECODER,), name = 'c0')
+
+context_last_word_concat_layer = Concatenate(axis = 2)
+
+s = initial_s
+c = initial_c
+
+outputs = []
+for t in range(max_len_output):
+    contexts = one_step_attention(encoder_outputs,s)
+
+
+
+
 
 
 
