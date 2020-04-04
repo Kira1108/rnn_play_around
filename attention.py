@@ -37,7 +37,7 @@ def softmax_over_time(x):
     assert(K.ndim(x) > 2)
 
     # the output should be of shape (N, T, 1), the last dimension represents alpha
-    e = K.exp(x - x.max(x,axis = 1, keepdims = True))
+    e = K.exp(x - K.max(x,axis = 1, keepdims = True))
     s = K.sum(e, axis = 1, keepdims = True)
     return e/s
 
@@ -204,21 +204,21 @@ print('Decoder targets shape: ', decoder_targets_oh.shape)
 
 # encoder
 encoder_inputs_tensor = Input(shape = (max_len_input,))
-x = embedding_layer(encoder_inputs_tensor)
+encoder_outputs = embedding_layer(encoder_inputs_tensor)
 encoder = Bidirectional(LSTM(LATENT_DIM,return_sequences = True, dropout = .5))
-encoder_outputs = encoder(x)
+encoder_outputs = encoder(encoder_outputs)
 
 # decoder
-decoder_inputs_tensor = Input(shape = (max_len_output))
+decoder_inputs_tensor = Input(shape = (max_len_output,))
 decoder_embedding = Embedding(num_words_outputs, EMBEDDING_DIM)
-decoder_inputs_tensor = decoder_embedding(decoder_inputs_tensor)
+decoder_inputs_tensor_o = decoder_embedding(decoder_inputs_tensor)
 
 # s<t-1> repeat Tx times
 attn_repeat_layer = RepeatVector(max_len_input)
 attn_concat_layer = Concatenate(axis = -1)
 attn_dense1 = Dense(10,activation = 'tanh')
 attn_dense2 = Dense(1, activation = softmax_over_time)
-attn_dot = Dot(axis = 1)
+attn_dot = Dot(axes = 1)
 
 def one_step_attention(h, st_1):
 
@@ -262,11 +262,78 @@ c = initial_c
 
 outputs = []
 for t in range(max_len_output):
-    contexts = one_step_attention(encoder_outputs,s)
+    context = one_step_attention(encoder_outputs, s)
+
+    # only 1 step of decoder input is fed to this network
+    # slice over which dimension??????????? WTF
+    # decoder input has a shape (batch_size, Ty, Dy)
+    # want to slice over time dimension
+    selector = Lambda(lambda x:x[:,t:t+1])
+    di = selector(decoder_inputs_tensor_o)
+
+    # next step: what to feed into LSTM
+    # context, decoder_input_current_step, hidden state s, cell state c
+    # concat context and decoder_input_current_step
+    # context is a vector of (batch_size, 1, 2*LATENT_DIM)
+    # di is a matrix of (batch_size, 1, num_words_outputs)
+    # concat on the last dimension = 2nd dimension
+    # downside input a tensor of (batch_size, 1, 2 * LATENT_DIM + num_words_outputs)
+    # h and c are hidden states passed to decoder LSTM
+
+    decoder_lstm_input = context_last_word_concat_layer([di, context])
+    o, s, c = decoder_lstm(decoder_lstm_input, initial_state = [s, c])
+
+    decoder_outputs = decoder_dense(o)
+    outputs.append(decoder_outputs)
 
 
+def stack_n_transpose(x):
+    x = K.stack(x)
+    x = K.permute_dimensions(x, pattern = (1,0,2))
+    return x
+
+stacker = Lambda(lambda x: stack_n_transpose(x))
+outputs = stacker(outputs)
 
 
+model = Model([encoder_inputs_tensor,
+            decoder_inputs_tensor,
+            initial_s,
+            initial_c],
+            outputs = outputs)
+print(model.summary())
+
+model.compile(optimizer = 'adam',
+    loss = 'categorical_crossentropy',
+    metrics = ['accuracy'])
+
+
+s0 = np.zeros((NUM_SAMPLES, LATENT_DIM_DECODER))
+c0 = np.zeros((NUM_SAMPLES, LATENT_DIM_DECODER))
+
+history = model.fit([encoder_inputs, decoder_inputs, s0, c0],
+        decoder_targets_oh,
+        epochs = 10,
+        validation_split = 0.1,
+        batch_size=BATCH_SIZE)
+
+
+plt.plot(history.history['loss'], label = 'Loss')
+plt.plot(history.history['val_loss'], label = 'Val-loss')
+plt.legend()
+plt.show()
+
+plt.plot(history.history['accuracy'], label = 'Accuracy')
+plt.plot(history.history['val_accuracy'], label = 'Val-Accuracy')
+plt.legend()
+plt.show()
+
+model.save('NMT.h5')
+model.save_weights('NMT_weights.h5')
+
+
+# ouptuts is now a tensor of Ty
+# each element is of shape (batch_size, output vocabsize)
 
 
 
