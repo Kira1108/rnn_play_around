@@ -313,7 +313,7 @@ c0 = np.zeros((NUM_SAMPLES, LATENT_DIM_DECODER))
 
 history = model.fit([encoder_inputs, decoder_inputs, s0, c0],
         decoder_targets_oh,
-        epochs = 10,
+        epochs = 30,
         validation_split = 0.1,
         batch_size=BATCH_SIZE)
 
@@ -332,22 +332,80 @@ model.save('NMT.h5')
 model.save_weights('NMT_weights.h5')
 
 
-# ouptuts is now a tensor of Ty
-# each element is of shape (batch_size, output vocabsize)
+### Build a prediction model ###
+encoder_model = Model(encoder_inputs_tensor, encoder_outputs)
+encoder_output_as_input = Input((max_len_input,2 * LATENT_DIM))
+
+decoder_input_single = Input(shape = (1,))
+decoder_input_single_embd = decoder_embedding(decoder_input_single)
+
+context = one_step_attention(encoder_output_as_input, initial_s)
+
+decoder_lstm_input = context_last_word_concat_layer([decoder_input_single_embd, context])
+o, h, c = decoder_lstm(decoder_lstm_input, initial_state = [initial_s, initial_c])
+decoder_dense_output = decoder_dense(o)
+
+# use an encoder model to get the sequence hidden states
+# do one step decode
+# input a single previously predicted word, previous hidden & cell states to decode
+# decode_prev -> get embedding -> get context with attention ->
+# -> concatenation -> lstm -> dense out
+# still need a for loop
+
+decoder_model = Model(inputs = [decoder_input_single,
+                    encoder_output_as_input,
+                    initial_s, initial_c],
+                    outputs = [decoder_dense_output,h,c])
 
 
+print(decoder_model.summary())
+
+################### No longer a batch operation ###########################
+###################    Process samples 1 by 1   ###########################
+# but your input is still a batch, batchsize = 1
+
+def decode_sequence(input_seq):
+    enc_out = encoder_model.predict(input_seq)
+
+    # empty sequence of length 1
+    target_seq = np.zeros((1,1))
+    target_seq[0,0] = word2index_outputs.get('<sos>')
+    eos = word2index_outputs.get('<eos>')
+
+    s = np.zeros((1, LATENT_DIM_DECODER))
+    c = np.zeros((1, LATENT_DIM_DECODER))
+
+    output_sentence = []
+
+    for t in range(max_len_output):
+        o,h,c = decoder_model.predict([target_seq , enc_out, s, c])
+        idx = np.argmax(o.flatten())
+
+        if idx == eos:
+            break
+
+        word =index2word_outputs.get(idx, '')
+
+        if word is not None:
+            output_sentence.append(word)
+
+        target_seq[0,0] = idx
+
+    return ' '.join(output_sentence)
 
 
-# if __name__ == '__main__':
-    # print('------------Reading_data_test-----------------')
-    # input_texts, target_texts, target_texts_inputs = read_data()
-    #
-    # for i in range(10):
-    #     print('Input:', input_texts[i])
-    #     print('Target:', target_texts[i])
-    #     print('Target input', target_texts_inputs[i])
-    #     print('*'*30)
+while True:
+     i = np.random.choice(len(encoder_inputs))
+     # outter list add a batch dimension
+     input_seq = encoder_inputs[i:i+1]
+     print('Input sequence example')
+     print(input_seq)
 
-    # print('------------Tokenization_test-----------------')
-    # input_texts, target_texts, target_texts_inputs = read_data()
-    # seqs, converters, token_info, tokenizers = tokenize_seq2seq(input_texts,target_texts,target_texts_inputs)
+     translation = decode_sequence(input_seq)
+
+     print("Model run-------:")
+     print('Input: {}'.format(input_texts[i]))
+     print('Translation: {}'.format(translation))
+     ans = input('Continue? [Y/n]')
+     if ans and ans.lower().startswith('n'):
+         break
